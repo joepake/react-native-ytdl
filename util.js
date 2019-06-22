@@ -410,12 +410,11 @@ const parallel = (funcs, callback) => {
 };
 
 /**
- * Changes GET request params values of a url
+ * Changes url get request params
  *
  * @param {string} uri
  * @param {string} key
  * @param {string} value
- * @return {string}
  */
 const changeURLParameter = (uri, key, value) => {
   var re = new RegExp("([?&])" + key + "=.*?(&|$)", "i");
@@ -428,11 +427,10 @@ const changeURLParameter = (uri, key, value) => {
 };
 
 /**
- * Removes GET request param from a url
+ * Removes url get request params
  *
  * @param {string} uri
  * @param {string} key
- * @return {string}
  */
 const removeURLParameter = (uri, key) => {
   var rtn = uri.split("?")[0],

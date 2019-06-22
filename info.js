@@ -11,6 +11,7 @@ const VIDEO_EURL = "https://youtube.googleapis.com/v/";
 const INFO_HOST = "www.youtube.com";
 const INFO_PATH = "/get_video_info";
 const KEYS_TO_SPLIT = ["keywords", "fmt_list", "fexp", "watermark"];
+const KEYS_TO_SPLIT_OPTIMIZED = ["fmt_list"];
 
 /**
  * Gets info from a video without getting additional formats.
@@ -63,23 +64,26 @@ const getBasicInfo = (id, options, callback) => {
 
       // Parse out additional metadata from this page.
       const additional = {
-        // Get the author/uploader.
-        author: extras.getAuthor(body),
+        // // Get the author/uploader.
+        // author: extras.getAuthor(body),
 
-        // Get the day the vid was published.
-        published: extras.getPublished(body),
+        // // Get the day the vid was published.
+        // published: extras.getPublished(body),
 
-        // Get description.
-        description: extras.getVideoDescription(body),
+        // // Get description.
+        // description: extras.getVideoDescription(body),
 
-        // Get media info.
-        media: extras.getVideoMedia(body),
+        // // Get media info.
+        // media: extras.getVideoMedia(body),
 
-        // Get related videos.
-        related_videos: extras.getRelatedVideos(body),
+        // Get views count.
+        viewsCount: extras.getViewsCount(body),
 
-        // Give the standard link to the video.
-        video_url: VIDEO_URL + id
+        // // Get related videos.
+        // related_videos: extras.getRelatedVideos(body),
+
+        // // Give the standard link to the video.
+        // video_url: VIDEO_URL + id
       };
 
       const jsonStr = util.between(body, "ytplayer.config = ", "</script>");
@@ -164,24 +168,28 @@ const gotConfig = (id, options, additional, config, fromEmbed, callback) => {
         }
       }
 
-      const player_response =
+      let player_response =
         config.args.player_response || info.player_response;
       if (player_response) {
         try {
-          info.player_response = JSON.parse(player_response);
+          player_response = JSON.parse(player_response);
         } catch (err) {
           return callback(
             Error("Error parsing `player_response`: " + err.message)
           );
         }
-        let playability = info.player_response.playabilityStatus;
+        let playability = player_response.playabilityStatus;
         if (playability && playability.status === "UNPLAYABLE") {
           return callback(Error(playability.reason));
         }
       }
 
+      //reduce object size
+      delete info.player_response
+      delete info.fflags
+
       // Split some keys by commas.
-      KEYS_TO_SPLIT.forEach(key => {
+      KEYS_TO_SPLIT_OPTIMIZED.forEach(key => {
         if (!info[key]) return;
         info[key] = info[key].split(",").filter(v => v !== "");
       });
@@ -307,9 +315,7 @@ const mergeFormats = (info, formatsMap) => {
     info.formats.push(formatsMap[itag]);
   }
 };
-
-//TODO: Find a way to implement getDashManifest function, dont forget to add comments afterwards
-const getDashManifest = () => console.error("react-native-ytdl: You tried to call an unimplemented function [getDashManifest] ")
+//TODO: Find a way to implement getDashManifest functions, dont forget to add comments
 
 /**
  * Gets additional formats.
