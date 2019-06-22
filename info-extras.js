@@ -28,7 +28,6 @@ const getVideoDescription = html => {
  * @return {string}
  */
 const getViewsCount = body => {
-    console.log('body = ', body)
   const viewsCount = util.between(body, '<div class="watch-view-count">', "</div>");
   return viewsCount ? parseInt(viewsCount.replace(/[^0-9\.]/g, ''), 10) : 0;
 };
