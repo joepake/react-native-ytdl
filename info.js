@@ -70,8 +70,8 @@ const getBasicInfo = (id, options, callback) => {
         // // Get the day the vid was published.
         // published: extras.getPublished(body),
 
-        // // Get description.
-        // description: extras.getVideoDescription(body),
+        // Get description.
+        description: extras.getVideoDescription(body),
 
         // // Get media info.
         // media: extras.getVideoMedia(body),
