@@ -71,7 +71,7 @@ const getBasicInfo = (id, options, callback) => {
         // published: extras.getPublished(body),
 
         // Get description.
-        description: extras.getVideoDescription(body),
+        description: extras.getFullDescription(body),
 
         // // Get media info.
         // media: extras.getVideoMedia(body),
