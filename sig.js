@@ -231,8 +231,12 @@ const setDownloadURL = (format, sig, debug) => {
   decodedUrl = util.changeURLParameter(decodedUrl, "ratebypass", "yes");
 
   if (sig) {
-    decodedUrl = util.changeURLParameter(decodedUrl, "signature", sig);
-  }
+        if (format.sp) {
+            decodedUrl = util.changeURLParameter(decodedUrl, format.sp, sig);
+        } else {
+            decodedUrl = util.changeURLParameter(decodedUrl, "signature", sig);
+        }
+    }
 
   format.url = decodedUrl;
 };
