@@ -2,7 +2,6 @@ import getInfo from "./info";
 import util from "./util";
 import sig from "./sig";
 
-
 exports.getBasicInfo = getInfo.getBasicInfo;
 exports.getInfo = getInfo.getFullInfo;
 exports.chooseFormat = util.chooseFormat;
