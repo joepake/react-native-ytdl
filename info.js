@@ -12,14 +12,6 @@ const VIDEO_EURL = 'https://youtube.googleapis.com/v/';
 const INFO_HOST = 'www.youtube.com';
 const INFO_PATH = '/get_video_info';
 
-const VIDEO_URL = "https://www.youtube.com/watch?v=";
-const EMBED_URL = "https://www.youtube.com/embed/";
-const VIDEO_EURL = "https://youtube.googleapis.com/v/";
-const INFO_HOST = "www.youtube.com";
-const INFO_PATH = "/get_video_info";
-const KEYS_TO_SPLIT = ["keywords", "fmt_list", "fexp", "watermark"];
-const KEYS_TO_SPLIT_OPTIMIZED = ["fmt_list"];
-
 /**
  * Gets info from a video without getting additional formats.
  *
