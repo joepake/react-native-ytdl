@@ -73,7 +73,8 @@ exports.getBasicInfo = (id, options, callback) => {
             const jsonStr = util.between(body, 'ytplayer.config = ', '</script>');
             let config;
             if (jsonStr) {
-                config = jsonStr.slice(0, jsonStr.lastIndexOf(';ytplayer.load'));
+                // config = jsonStr.slice(0, jsonStr.lastIndexOf(';ytplayer.load'));
+                config = util.cutAfterJSON(jsonStr);
                 gotConfig(id, options, additional, config, false, callback);
 
             } else {
@@ -165,7 +166,8 @@ const gotConfig = (id, options, additional, config, fromEmbed, callback) => {
 
             let playability = info.player_response.playabilityStatus;
             if (playability && playability.status === 'UNPLAYABLE') {
-                return callback(Error(playability.reason));
+                // return callback(Error(playability.reason));
+                return callback(Error(util.stripHTML(playability.reason)));
             }
 
             info.formats = parseFormats(info);
@@ -251,7 +253,7 @@ exports.getFullInfo = (id, options, callback) => {
  */
 const mergeFormats = (info, formatsMap) => {
     info.formats.forEach((f) => {
-        formatsMap[f.itag] = f;
+        formatsMap[f.itag] = formatsMap[f.itag] || f;
     });
     info.formats = Object.values(formatsMap);
 };
