@@ -1,5 +1,5 @@
 const url = require('url');
-import FORMATS from './formats';
+const FORMATS = require('./formats');
 
 
 // Use these to help sort formats, higher is better.
@@ -21,11 +21,11 @@ const videoEncodingRanks = [
     'H.264',
 ];
 
-const getBitrate = (format) => parseInt(format.bitrate) || 0;
-const audioScore = (format) => {
+const getBitrate = format => parseInt(format.bitrate) || 0;
+const audioScore = format => {
     const abitrate = format.audioBitrate || 0;
     const aenc = audioEncodingRanks.findIndex(enc => format.codecs && format.codecs.includes(enc));
-    return abitrate + aenc / 10;
+    return abitrate + (aenc / 10);
 };
 
 
@@ -35,12 +35,17 @@ const audioScore = (format) => {
  *
  * @param {Object} a
  * @param {Object} b
+ * @returns {number}
  */
 exports.sortFormats = (a, b) => {
-    const ares = a.qualityLabel ? parseInt(a.qualityLabel.slice(0, -1)) : 0;
-    const bres = b.qualityLabel ? parseInt(b.qualityLabel.slice(0, -1)) : 0;
-    const afeats = ~~!!ares * 2 + ~~!!a.audioBitrate;
-    const bfeats = ~~!!bres * 2 + ~~!!b.audioBitrate;
+    const getResolution = format => {
+        const result = /(\d+)p/.exec(format.qualityLabel);
+        return result ? parseInt(result[1]) : 0;
+    };
+    const ares = getResolution(a);
+    const bres = getResolution(b);
+    const afeats = (~~!!ares * 2) + ~~!!a.audioBitrate;
+    const bfeats = (~~!!bres * 2) + ~~!!b.audioBitrate;
 
     if (afeats === bfeats) {
         if (ares === bres) {
@@ -73,7 +78,8 @@ exports.sortFormats = (a, b) => {
  *
  * @param {Array.<Object>} formats
  * @param {Object} options
- * @return {Object|Error}
+ * @returns {Object}
+ * @throws {Error} when no format matches the filter/format rules
  */
 exports.chooseFormat = (formats, options) => {
     if (typeof options.format === 'object') {
@@ -82,9 +88,6 @@ exports.chooseFormat = (formats, options) => {
 
     if (options.filter) {
         formats = exports.filterFormats(formats, options.filter);
-        if (formats.length === 0) {
-            return Error('No formats found with custom filter');
-        }
     }
 
     let format;
@@ -100,68 +103,72 @@ exports.chooseFormat = (formats, options) => {
 
         case 'highestaudio':
             formats = exports.filterFormats(formats, 'audio');
-            format = null;
-            for (let f of formats) {
-                if (!format
-                    || audioScore(f) > audioScore(format))
-                    format = f;
-            }
+            sortFormatsSimple(formats, true);
+            format = formats[0];
             break;
 
         case 'lowestaudio':
             formats = exports.filterFormats(formats, 'audio');
-            format = null;
-            for (let f of formats) {
-                if (!format
-                    || audioScore(f) < audioScore(format))
-                    format = f;
-            }
+            sortFormatsSimple(formats, true);
+            format = formats[formats.length - 1];
             break;
 
         case 'highestvideo':
             formats = exports.filterFormats(formats, 'video');
-            format = null;
-            for (let f of formats) {
-                if (!format
-                    || getBitrate(f) > getBitrate(format))
-                    format = f;
-            }
+            sortFormatsSimple(formats);
+            format = formats[0];
             break;
 
         case 'lowestvideo':
             formats = exports.filterFormats(formats, 'video');
-            format = null;
-            for (let f of formats) {
-                if (!format
-                    || getBitrate(f) < getBitrate(format))
-                    format = f;
-            }
+            sortFormatsSimple(formats);
+            format = formats[formats.length - 1];
             break;
 
-        default: {
-            let getFormat = (itag) => {
-                return formats.find((format) => '' + format.itag === '' + itag);
-            };
-            if (Array.isArray(quality)) {
-                quality.find((q) => format = getFormat(q));
-            } else {
-                format = getFormat(quality);
-            }
-        }
-
+        default:
+            format = getFormatByQuality(quality, formats);
+            break;
     }
 
     if (!format) {
-        return Error('No such format found: ' + quality);
+        throw Error(`No such format found: ${quality}`);
     }
     return format;
 };
+
+/**
+ * Gets a format based on quality or array of quality's
+ *
+ * @param {string|[string]} quality
+ * @param {[Object]} formats
+ * @returns {Object}
+ */
+const getFormatByQuality = (quality, formats) => {
+    let getFormat = itag => formats.find(format => `${format.itag}` === `${itag}`);
+    if (Array.isArray(quality)) {
+        return getFormat(quality.find(q => getFormat(q)));
+    } else {
+        return getFormat(quality);
+    }
+};
+
+/**
+ * Sort's the provided formats - highest bitrate first
+ *
+ * @param {[Object]} formats
+ * @param {boolean} audioOnly look at audio score instead of video bitrate
+ * @returns {[Object]}
+ */
+const sortFormatsSimple = (formats, audioOnly = false) => formats.sort((a, b) => {
+    if (audioOnly) return audioScore(b) - audioScore(a);
+    return getBitrate(b) - getBitrate(a);
+});
 
 
 /**
  * @param {Array.<Object>} formats
  * @param {Function} filter
- * @return {Array.<Object>}
+ * @returns {Array.<Object>}
  */
 exports.filterFormats = (formats, filter) => {
     let fn;
@@ -169,7 +176,7 @@ exports.filterFormats = (formats, filter) => {
     const hasAudio = format => !!format.audioBitrate;
     switch (filter) {
         case 'audioandvideo':
-            fn = (format) => hasVideo(format) && hasAudio(format);
+            fn = format => hasVideo(format) && hasAudio(format);
             break;
 
         case 'video':
@@ -177,7 +184,7 @@ exports.filterFormats = (formats, filter) => {
             break;
 
         case 'videoonly':
-            fn = (format) => hasVideo(format) && !hasAudio(format);
+            fn = format => hasVideo(format) && !hasAudio(format);
             break;
 
         case 'audio':
@@ -185,7 +192,7 @@ exports.filterFormats = (formats, filter) => {
             break;
 
         case 'audioonly':
-            fn = (format) => !hasVideo(format) && hasAudio(format);
+            fn = format => !hasVideo(format) && hasAudio(format);
             break;
 
         default:
@@ -195,20 +202,7 @@ exports.filterFormats = (formats, filter) => {
                 throw TypeError(`Given filter (${filter}) is not supported`);
             }
     }
-    return formats.filter(fn);
-};
-
-
-/**
- * String#indexOf() that supports regex too.
- *
- * @param {string} haystack
- * @param {string|RegExp} needle
- * @return {number}
- */
-const indexOf = (haystack, needle) => {
-    return needle instanceof RegExp ?
-        haystack.search(needle) : haystack.indexOf(needle);
+    return formats.filter(format => !!format.url && fn(format));
 };
 
 
@@ -218,13 +212,13 @@ const indexOf = (haystack, needle) => {
  * @param {string} haystack
  * @param {string} left
  * @param {string} right
- * @return {string}
+ * @returns {string}
  */
 exports.between = (haystack, left, right) => {
-    let pos = indexOf(haystack, left);
+    let pos = haystack.indexOf(left);
     if (pos === -1) { return ''; }
     haystack = haystack.slice(pos + left.length);
-    pos = indexOf(haystack, right);
+    pos = haystack.indexOf(right);
     if (pos === -1) { return ''; }
     haystack = haystack.slice(0, pos);
     return haystack;
@@ -244,7 +238,9 @@ exports.between = (haystack, left, right) => {
  *  - https://gaming.youtube.com/watch?v=VIDEO_ID
  *
  * @param {string} link
- * @return {string|Error}
+ * @return {string}
+ * @throws {Error} If unable to find a id
+ * @throws {TypeError} If videoid doesn't match specs
  */
 const validQueryDomains = new Set([
     'youtube.com',
@@ -253,29 +249,22 @@ const validQueryDomains = new Set([
     'music.youtube.com',
     'gaming.youtube.com',
 ]);
-// const validPathDomains = new Set([
-//     'youtu.be',
-//     'youtube.com',
-//     'www.youtube.com',
-// ]);
 const validPathDomains = /^https?:\/\/(youtu\.be\/|(www\.)?youtube.com\/(embed|v)\/)/;
-
-exports.getURLVideoID = (link) => {
+exports.getURLVideoID = link => {
     const parsed = url.parse(link, true);
     let id = parsed.query.v;
-    // if (validPathDomains.has(parsed.hostname) && !id) {
-    if (validPathDomains.test(link) && !id) {   
+    if (validPathDomains.test(link) && !id) {
         const paths = parsed.pathname.split('/');
         id = paths[paths.length - 1];
     } else if (parsed.hostname && !validQueryDomains.has(parsed.hostname)) {
-        return Error('Not a YouTube domain');
+        throw Error('Not a YouTube domain');
     }
     if (!id) {
-        return Error('No video id found: ' + link);
+        throw Error(`No video id found: ${link}`);
     }
     id = id.substring(0, 11);
     if (!exports.validateID(id)) {
-        return TypeError(`Video id (${id}) does not match expected ` +
+        throw TypeError(`Video id (${id}) does not match expected ` +
             `format (${idRegex.toString()})`);
     }
     return id;
@@ -287,9 +276,11 @@ exports.getURLVideoID = (link) => {
  * matches the video ID format.
  *
  * @param {string} str
- * @return {string|Error}
+ * @returns {string}
+ * @throws {Error} If unable to find a id
+ * @throws {TypeError} If videoid doesn't match specs
  */
-exports.getVideoID = (str) => {
+exports.getVideoID = str => {
     if (exports.validateID(str)) {
         return str;
     } else {
@@ -305,27 +296,30 @@ exports.getVideoID = (str) => {
  * @return {boolean}
  */
 const idRegex = /^[a-zA-Z0-9-_]{11}$/;
-exports.validateID = (id) => {
-    return idRegex.test(id);
-};
+exports.validateID = id => idRegex.test(id);
 
 
 /**
  * Checks wether the input string includes a valid id.
  *
  * @param {string} string
- * @return {boolean}
+ * @returns {boolean}
  */
-exports.validateURL = (string) => {
-    return !(exports.getURLVideoID(string) instanceof Error);
+exports.validateURL = string => {
+    try {
+        exports.getURLVideoID(string);
+        return true;
+    } catch (e) {
+        return false;
+    }
 };
 
 
 /**
  * @param {Object} format
- * @return {Object}
+ * @returns {Object}
  */
-exports.addFormatMeta = (format) => {
+exports.addFormatMeta = format => {
     format = Object.assign({}, FORMATS[format.itag], format);
     format.container = format.mimeType ?
         format.mimeType.split(';')[0].split('/')[1] : null;
@@ -342,138 +336,48 @@ exports.addFormatMeta = (format) => {
  * Get only the string from an HTML string.
  *
  * @param {string} html
- * @return {string}
+ * @returns {string}
  */
-exports.stripHTML = (html) => {
-    return html
-        .replace(/[\n\r]/g, ' ')
-        .replace(/\s*<\s*br\s*\/?\s*>\s*/gi, '\n')
-        .replace(/<\s*\/\s*p\s*>\s*<\s*p[^>]*>/gi, '\n')
-        .replace(/<.*?>/gi, '')
-        .trim();
-};
+exports.stripHTML = html => html
+    .replace(/[\n\r]/g, ' ')
+    .replace(/\s*<\s*br\s*\/?\s*>\s*/gi, '\n')
+    .replace(/<\s*\/\s*p\s*>\s*<\s*p[^>]*>/gi, '\n')
+    .replace(/<a\s+(?:[^>]*?\s+)?href=(?:["'])\/redirect.*?q=(.*?)(?:[&'"]).*?<\/a>/gi,
+        (_, p1) => decodeURIComponent(p1))
+    .replace(/<a\s+(?:[^>]*?\s+)?href=(?:["'])((?:https?|\/).*?)(?:['"]).*?<\/a>/gi,
+        (_, p1) => url.resolve('https://youtube.com/', p1))
+    .replace(/<.*?>/gi, '')
+    .trim();
 
 
 /**
- * @param {Array.<Function>} funcs
- * @param {Function(!Error, Array.<Object>)} callback
- */
-exports.parallel = (funcs, callback) => {
-    let funcsDone = 0;
-    let errGiven = false;
-    let results = [];
-    const len = funcs.length;
-
-    const checkDone = (index, err, result) => {
-        if (errGiven) { return; }
-        if (err) {
-            errGiven = true;
-            callback(err);
-            return;
-        }
-        results[index] = result;
-        if (++funcsDone === len) {
-            callback(null, results);
-        }
-    };
-
-    if (len > 0) {
-        funcs.forEach((f, i) => { f(checkDone.bind(null, i)); });
-    } else {
-        callback(null, results);
-    }
-};
-
-/**
- * Changes url get request params
+ * Get a number from an abbreviated number string.
  *
- * @param {string} uri
- * @param {string} key
- * @param {string} value
+ * @param {string} string
+ * @returns {number}
  */
-const changeURLParameter = (uri, key, value) => {
-    var re = new RegExp('([?&])' + key + '=.*?(&|$)', 'i');
-    var separator = uri.indexOf('?') !== -1 ? '&' : '?';
-    if (uri.match(re)) {
-        return uri.replace(re, '$1' + key + '=' + value + '$2');
-    } else {
-        return uri + separator + key + '=' + value;
+exports.parseAbbreviatedNumber = string => {
+    const match = string
+        .replace(',', '.')
+        .replace(' ', '')
+        .match(/([\d,.]+)([MK]?)/);
+    if (match) {
+        let [, num, multi] = match;
+        num = parseFloat(num);
+        return multi === 'M' ? num * 1000000 :
+            multi === 'K' ? num * 1000 : num;
     }
-};
-
-/**
- * Removes url get request params
- *
- * @param {string} uri
- * @param {string} key
- */
-const removeURLParameter = (uri, key) => {
-    var rtn = uri.split('?')[0],
-        param,
-        params_arr = [],
-        queryString = uri.indexOf('?') !== -1 ? uri.split('?')[1] : '';
-    if (queryString !== '') {
-        params_arr = queryString.split('&');
-        for (var i = params_arr.length - 1; i >= 0; i -= 1) {
-            param = params_arr[i].split('=')[0];
-            if (param === key) {
-                params_arr.splice(i, 1);
-            }
-        }
-        rtn = rtn + '?' + params_arr.join('&');
-    }
-    return rtn;
-};
-
-
-/** TAKEN FROM: https://github.com/fent/node-m3u8stream/blob/master/src/parse-time.ts
- *  TYPES HAVE BEEN STRIPPED
- * 
- * Converts human friendly time to milliseconds. Supports the format
- * 00:00:00.000 for hours, minutes, seconds, and milliseconds respectively.
- * And 0ms, 0s, 0m, 0h, and together 1m1s.
- * 
- * 
- * @param {string|number} time
- * @return {number}
- */
-const humanStr = (time) => {
-    const numberFormat = /^\d+$/;
-    const timeFormat = /^(?:(?:(\d+):)?(\d{1,2}):)?(\d{1,2})(?:\.(\d{3}))?$/;
-    const timeUnits = {
-        ms: 1,
-        s: 1000,
-        m: 60000,
-        h: 3600000,
-    };
-
-    if (typeof time === 'number') { return time; }
-    if (numberFormat.test(time)) { return +time; }
-    const firstFormat = timeFormat.exec(time);
-    if (firstFormat) {
-        return +(firstFormat[1] || 0) * timeUnits.h +
-            +(firstFormat[2] || 0) * timeUnits.m +
-            +firstFormat[3] * timeUnits.s +
-            +(firstFormat[4] || 0);
-    } else {
-        let total = 0;
-        const r = /(-?\d+)(ms|s|m|h)/g;
-        let rs;
-        while ((rs = r.exec(time)) != null) {
-            total += +rs[1] * timeUnits[rs[2]];
-        }
-        return total;
-    }
+    return null;
 };
 
 
 /**
  * Match begin and end braces of input JSON, return only json
  *
- * @param {String} mixedJson
- * @return {String}
+ * @param {string} mixedJson
+ * @returns {string}
 */
-cutAfterJSON = (mixedJson) => {
+exports.cutAfterJSON = mixedJson => {
     let open, close;
     if (mixedJson[0] === '[') {
         open = '[';
@@ -519,11 +423,18 @@ cutAfterJSON = (mixedJson) => {
     throw Error("Can't cut unsupported JSON (no matching closing bracket found)");
 };
 
-const nonOriginalCustomExports = {
-    changeURLParameter,
-    removeURLParameter,
-    humanStr,
-    cutAfterJSON
-}
 
-export default { ...nonOriginalCustomExports, ...exports };
+/**
+ * Checks if there is a playability error.
+ *
+ * @param {Object} info
+ * @param {string} status
+ * @returns {!Error}
+ */
+exports.playError = (info, status) => {
+    let playability = info.playerResponse.playabilityStatus;
+    if (playability && playability.status === status) {
+        return Error(playability.reason || (playability.messages && playability.messages[0]));
+    }
+    return null;
+};

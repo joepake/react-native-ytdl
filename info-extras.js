@@ -1,158 +1,129 @@
-const qs = require('query-string');
-const url = require('url');
-const Entities = require('html-entities').AllHtmlEntities;
-
-import util from "./util";
+const util = require('./util');
+const qs = require('querystring');
+const urllib = require('url');
+const parseTime = require('m3u8stream/dist/parse-time');
 
 
 const VIDEO_URL = 'https://www.youtube.com/watch?v=';
-const getMetaItem = (body, name) => {
-    return util.between(body, `<meta itemprop="${name}" content="`, '">');
-};
 
 
 /**
- * Get video description from html
+ * Get video media.
  *
- * @param {string} html
- * @return {string}
+ * @param {Object} info
+ * @returns {Object}
  */
-exports.getVideoDescription = (html) => {
-    const regex = /<p.*?id="eow-description".*?>(.+?)<\/p>[\n\r\s]*?<\/div>/im;
-    const description = html.match(regex);
-    return description ?
-        Entities.decode(util.stripHTML(description[1])) : '';
-};
-
-exports.getFullDescription = html => {
-    const description = util.between(html, '<p id="eow-description" class="" >', "</p>");
-    const regex = /(<a\/?[^>]+(>|$))/ig;
-    const result = description.replace(regex, '<a>');
-
-    return result ? result : "";
-};
-
-/**
- * Get video views count from html
- *
- * @param {string} html
- * @return {string}
- */
-exports.getViewsCount = body => {
-    const viewsCount = util.between(body, '<div class="watch-view-count">', "</div>");
-    return viewsCount ? parseInt(viewsCount.replace(/[^0-9\.]/g, ''), 10) : 0;
-};
-
-/**
- * Get video media (extra information) from html
- *
- * @param {string} body
- * @return {Object}
- */
-exports.getVideoMedia = (body) => {
-    let mediainfo = util.between(body,
-        '<div id="watch-description-extras">',
-        '<div id="watch-discussion" class="branded-page-box yt-card">');
-    if (mediainfo === '') {
-        return {};
-    }
-
-    const regexp = /<h4 class="title">([\s\S]*?)<\/h4>[\s\S]*?<ul .*?class=".*?watch-info-tag-list">[\s\S]*?<li>([\s\S]*?)<\/li>(?:\s*?<li>([\s\S]*?)<\/li>)?/g;
-    const contentRegexp = /(?: - (\d{4}) \()?<a .*?(?:href="([^"]+)")?.*?>(.*?)<\/a>/;
-    const imgRegexp = /<img src="([^"]+)".*?>/;
-    const media = {};
-
-    const image = imgRegexp.exec(mediainfo);
-    if (image) {
-        media.image = url.resolve(VIDEO_URL, image[1]);
-    }
-
-    let match;
-    while ((match = regexp.exec(mediainfo)) != null) {
-        let [, key, value, detail] = match;
-        key = Entities.decode(key).trim().replace(/\s/g, '_').toLowerCase();
-        const content = contentRegexp.exec(value);
-        if (content) {
-            let [, year, mediaUrl, value2] = content;
-            if (year) {
-                media.year = parseInt(year);
-            } else if (detail) {
-                media.year = parseInt(detail);
-            }
-            value = value.slice(0, content.index);
-            if (key !== 'game' || value2 !== 'YouTube Gaming') {
-                value += value2;
-            }
-            media[key + '_url'] = url.resolve(VIDEO_URL, mediaUrl);
-        }
-        return media;
-    };
-};
-
-/**
- * Get video Owner from html.
- *
- * @param {string} body
- * @return {Object}
- */
-const userRegexp = /<a href="\/user\/([^"]+)/;
-const verifiedRegexp = /<span .*?(aria-label="Verified")(.*?(?=<\/span>))/;
-exports.getAuthor = (body) => {
-    let ownerinfo = util.between(body,
-        '<div id="watch7-user-header" class=" spf-link ">',
-        '<div id="watch8-action-buttons" class="watch-action-buttons clearfix">');
-    if (ownerinfo === '') {
-        return {};
-    }
-    const channelName = Entities.decode(util.between(util.between(
-        ownerinfo, '<div class="yt-user-info">', '</div>'), '>', '</a>'));
-    const userMatch = ownerinfo.match(userRegexp);
-    const verifiedMatch = ownerinfo.match(verifiedRegexp);
-    const channelID = getMetaItem(body, 'channelId');
-    const username = userMatch ? userMatch[1] : util.between(
-        util.between(body, '<span itemprop="author"', '</span>'), '/user/', '">');
-    return {
-        id: channelID,
-        name: channelName,
-        avatar: url.resolve(VIDEO_URL, util.between(ownerinfo,
-            'data-thumb="', '"')),
-        verified: !!verifiedMatch,
-        user: username,
-        channel_url: 'https://www.youtube.com/channel/' + channelID,
-        user_url: 'https://www.youtube.com/user/' + username,
-    };
-};
-
-
-/**
- * Get video published at from html.
- *
- * @param {string} body
- * @return {string}
- */
-exports.getPublished = (body) => {
-    return Date.parse(getMetaItem(body, 'datePublished'));
-};
-
-
-/**
- * Get video published at from html.
- * Credits to https://github.com/paixaop.
- *
- * @param {string} body
- * @return {Array.<Object>}
- */
-exports.getRelatedVideos = (body) => {
-    let jsonStr = util.between(body, '\'RELATED_PLAYER_ARGS\': ', /,[\n\r]/);
-
-    let watchNextJson, rvsParams, secondaryResults;
+exports.getMedia = info => {
+    let media = {};
+    let results = [];
     try {
-        jsonStr = JSON.parse(jsonStr);
-        watchNextJson = JSON.parse(jsonStr.watch_next_response);
-        rvsParams = jsonStr.rvs.split(',').map((e) => qs.parse(e));
-        secondaryResults = watchNextJson.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results;
+        results = info.response.contents.twoColumnWatchNextResults.results.results.contents;
+    } catch (err) {
+        // Do nothing
     }
-    catch (err) {
+
+    let result = results.find(v => v.videoSecondaryInfoRenderer);
+    if (!result) { return {}; }
+
+    try {
+        let metadataRows =
+            (result.metadataRowContainer || result.videoSecondaryInfoRenderer.metadataRowContainer)
+                .metadataRowContainerRenderer.rows;
+        for (let row of metadataRows) {
+            if (row.metadataRowRenderer) {
+                let title = row.metadataRowRenderer.title.simpleText.toLowerCase();
+                let contents = row.metadataRowRenderer.contents[0];
+                let runs = contents.runs;
+                media[title] = runs ? runs[0].text : contents.simpleText;
+                if (runs && runs[0].navigationEndpoint) {
+                    media[`${title}_url`] = urllib.resolve(VIDEO_URL,
+                        runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url);
+                }
+            } else if (row.richMetadataRowRenderer) {
+                let contents = row.richMetadataRowRenderer.contents;
+                for (let content of contents) {
+                    let meta = content.richMetadataRenderer;
+                    media.thumbnails = meta.thumbnail.thumbnails;
+                    // TODO: Added for backwards compatibility. Remove later.
+                    media.image = urllib.resolve(VIDEO_URL, media.thumbnails[0].url);
+                }
+                let richMeta = contents
+                    .filter(meta => meta.richMetadataRenderer.style === 'RICH_METADATA_RENDERER_STYLE_BOX_ART');
+                for (let { richMetadataRenderer } of richMeta) {
+                    let meta = richMetadataRenderer;
+                    media.year = meta.subtitle.simpleText;
+                    let type = meta.callToAction.simpleText.split(' ')[1];
+                    media[type] = meta.title.simpleText;
+                    media[`${type}_url`] = urllib.resolve(VIDEO_URL,
+                        meta.endpoint.commandMetadata.webCommandMetadata.url);
+                }
+            }
+        }
+    } catch (err) {
+        // Do nothing.
+    }
+
+    return media;
+};
+
+/**
+ * Get video author.
+ *
+ * @param {Object} info
+ * @returns {Object}
+ */
+exports.getAuthor = info => {
+    let channelId, avatar, subscriberCount, verified = false;
+    try {
+        let results = info.response.contents.twoColumnWatchNextResults.results.results.contents;
+        let v = results.find(v2 =>
+            v2.videoSecondaryInfoRenderer &&
+            v2.videoSecondaryInfoRenderer.owner &&
+            v2.videoSecondaryInfoRenderer.owner.videoOwnerRenderer);
+        let videoOwnerRenderer = v.videoSecondaryInfoRenderer.owner.videoOwnerRenderer;
+        channelId = videoOwnerRenderer.navigationEndpoint.browseEndpoint.browseId;
+        avatar = urllib.resolve(VIDEO_URL, videoOwnerRenderer.thumbnail.thumbnails[0].url);
+        subscriberCount = util.parseAbbreviatedNumber(
+            videoOwnerRenderer.subscriberCountText.runs[0].text);
+        verified = !!videoOwnerRenderer.badges.find(b => b.metadataBadgeRenderer.tooltip === 'Verified');
+    } catch (err) {
+        // Do nothing.
+    }
+    try {
+        let videoDetails = info.player_response.microformat.playerMicroformatRenderer;
+        let id = videoDetails.channelId || channelId;
+        return {
+            id: id,
+            name: videoDetails.ownerChannelName,
+            user: videoDetails.ownerProfileUrl.split('/').slice(-1)[0],
+            channel_url: `https://www.youtube.com/channel/${id}`,
+            external_channel_url: `https://www.youtube.com/channel/${videoDetails.externalChannelId}`,
+            user_url: urllib.resolve(VIDEO_URL, videoDetails.ownerProfileUrl),
+            avatar: avatar,
+            verified: verified,
+            subscriber_count: subscriberCount,
+        };
+    } catch (err) {
+        return {};
+    }
+};
+
+/**
+ * Get related videos.
+ *
+ * @param {Object} info
+ * @returns {Array.<Object>}
+ */
+exports.getRelatedVideos = info => {
+    let rvsParams = [], secondaryResults;
+    try {
+        rvsParams = info.response.webWatchNextResponseExtensionData.relatedVideoArgs.split(',').map(e => qs.parse(e));
+    } catch (err) {
+        // Do nothing.
+    }
+    try {
+        secondaryResults = info.response.contents.twoColumnWatchNextResults.secondaryResults.secondaryResults.results;
+    } catch (err) {
         return [];
     }
     let videos = [];
@@ -162,9 +133,9 @@ exports.getRelatedVideos = (body) => {
             try {
                 let viewCount = details.viewCountText.simpleText;
                 let shortViewCount = details.shortViewCountText.simpleText;
-                let rvsDetails = rvsParams.find((elem) => elem.id === details.videoId);
+                let rvsDetails = rvsParams.find(elem => elem.id === details.videoId);
                 if (!/^\d/.test(shortViewCount)) {
-                    shortViewCount = rvsDetails && rvsDetails.short_view_count_text || '';
+                    shortViewCount = (rvsDetails && rvsDetails.short_view_count_text) || '';
                 }
                 viewCount = (/^\d/.test(viewCount) ? viewCount : shortViewCount).split(' ')[0];
                 videos.push({
@@ -176,8 +147,8 @@ exports.getRelatedVideos = (body) => {
                     short_view_count_text: shortViewCount.split(' ')[0],
                     view_count: viewCount.replace(',', ''),
                     length_seconds: details.lengthText ?
-                        Math.floor(util.humanStr(details.lengthText.simpleText) / 1000) :
-                        rvsParams && rvsParams.length_seconds + '',
+                        Math.floor(parseTime.humanStr(details.lengthText.simpleText) / 1000) :
+                        rvsParams && `${rvsParams.length_seconds}`,
                     video_thumbnail: details.thumbnail.thumbnails[0].url,
                 });
             } catch (err) {
@@ -188,4 +159,26 @@ exports.getRelatedVideos = (body) => {
     return videos;
 };
 
-export default exports;
+/**
+ * Get like count.
+ *
+ * @param {string} body
+ * @return {number}
+ */
+const getLikesRegex = /"label":"([\d,]+?) likes"/;
+exports.getLikes = body => {
+    const likes = body.match(getLikesRegex);
+    return likes ? parseInt(likes[1].replace(/,/g, '')) : null;
+};
+
+/**
+ * Get dislike count.
+ *
+ * @param {string} body
+ * @return {number}
+ */
+const getDislikesRegex = /"label":"([\d,]+?) dislikes"/;
+exports.getDislikes = body => {
+    const dislikes = body.match(getDislikesRegex);
+    return dislikes ? parseInt(dislikes[1].replace(/,/g, '')) : null;
+};

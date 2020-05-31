@@ -1,3 +1,6 @@
+# Joepake update
+based on https://github.com/fent/node-ytdl-core/releases #v2.1.5
+
 # react-native-ytdl
 
 YouTube video and audio stream extractor for react native.
