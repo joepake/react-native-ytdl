@@ -112,6 +112,15 @@ const parseFormats = (info) => {
             formats = formats.concat(info.player_response.streamingData.adaptiveFormats);
         }
     }
+
+    formats = formats.map(x => {
+        const { signatureCipher, ...rest } = x;
+        if (signatureCipher) {
+            return { cipher: signatureCipher, ...rest };
+        }
+        return rest;
+    });
+    
     return formats;
 };
 
